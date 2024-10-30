@@ -1,5 +1,6 @@
 package net.caltona.miscserver;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -8,10 +9,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.yaml.snakeyaml.Yaml;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
+import java.io.*;
 import java.util.*;
+import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -24,10 +25,13 @@ public class FlashCardController {
 
     private final Map<String, List<Integer>> weightsByName;
 
+    private final Map<String, Writer> outputsByName;
+
     public FlashCardController(@Value("${misc.cards.combosdirectory}") String directory,
-                               @Value("${misc.cards.resultsdirectory}") String resultsDirectory) throws FileNotFoundException {
+                               @Value("${misc.cards.resultsdirectory}") String resultsDirectory) throws IOException {
         this.combosByName = new TreeMap<>();
         this.weightsByName = new HashMap<>();
+        this.outputsByName = new HashMap<>();
         File dir = new File(directory);
         if (!dir.exists() || !dir.isDirectory()) {
             throw new IllegalStateException(String.format("Directory %s does not exist", directory));
@@ -43,9 +47,17 @@ public class FlashCardController {
                 throw new IllegalStateException(String.format("Null container for %s", file.getName()));
             }
             loaded.check();
+
             String key = file.getName().replace(".yaml", "");
             combosByName.put(key, loaded.getCombos());
-            weightsByName.put(key, loaded.getCombos().stream().map(__ -> 1).collect(Collectors.toCollection(ArrayList::new)));
+
+            List<Integer> weights = loaded.getCombos().stream().map(__ -> 1).collect(Collectors.toCollection(ArrayList::new));
+            weightsByName.put(key, weights);
+
+            String weightsFile = resultsDirectory + "/" + key + ".dmp";
+            Writer writer = new Writer(weightsFile);
+            outputsByName.put(key, writer);
+            writer.read((question, difficulty) -> addWeight(key, weights, question, difficulty));
         }
     }
 
@@ -60,7 +72,7 @@ public class FlashCardController {
         if (combos == null) {
             return listHTML();
         }
-        return cardHTML(list, combos, weightsByName.get(list), question, difficulty);
+        return cardHTML(list, combos, weightsByName.get(list), outputsByName.get(list), question, difficulty);
     }
 
     private String listHTML() {
@@ -89,24 +101,14 @@ public class FlashCardController {
         );
     }
 
-    private String cardHTML(String list, List<Combo> combos, List<Integer> weights, Integer question, Integer difficulty) {
+    private String cardHTML(String list, List<Combo> combos, List<Integer> weights, Writer output, Integer question, Integer difficulty) {
         log.info("List {} card {} difficulty {}", list, question, difficulty);
         List<String> errors = getErrors(combos, question, difficulty);
         if (question != null && difficulty != null && errors.isEmpty()) {
-            int addedWeight = 0; // If wrong don't make the question any less likely
-            if (difficulty == 2) {
-                addedWeight = 3; // If hard make the question less likely
-            }
-            if (difficulty == 3) {
-                addedWeight = 15; // If easy make the question way less likely
-            }
-            int currentWeight = weights.get(question);
-            log.info("List {} adding {} weight to question {}", list, addedWeight, currentWeight);
-            weights.set(question, currentWeight + addedWeight);
-            // TODO: Write weighting?
+            addWeight(list, weights, question, difficulty);
+            output.write(question, difficulty);
         }
-        // TODO: Apply weighting
-        int selected = RANDOM.nextInt(combos.size());
+        int selected = applyWeights(weights);
         Combo combo = combos.get(selected);
         return String.format("<html>" +
                         "   <head>" +
@@ -146,6 +148,44 @@ public class FlashCardController {
         );
     }
 
+    private static void addWeight(String list, List<Integer> weights, Integer question, Integer difficulty) {
+        int addedWeight = -1;
+        if (difficulty == 1) {
+            addedWeight = 0; // If wrong don't make the question any less likely
+        }
+        if (difficulty == 2) {
+            addedWeight = 3; // If hard make the question less likely
+        }
+        if (difficulty == 3) {
+            addedWeight = 15; // If easy make the question way less likely
+        }
+        int currentWeight = weights.get(question);
+        log.info("List {} adding {} weight to question {}", list, addedWeight, currentWeight);
+        weights.set(question, currentWeight + addedWeight);
+    }
+
+    private int applyWeights(List<Integer> weights) {
+        int modifier = weights.stream()
+                .mapToInt(__ -> __)
+                .max()
+                .getAsInt();
+        List<Integer> computed = weights.stream()
+                .map(weight -> Math.abs(modifier - weight) + 1)
+                .toList();
+        int sum = computed.stream()
+                .mapToInt(__ -> __)
+                .sum();
+        int selected = RANDOM.nextInt(sum);
+        int current = 0;
+        for (int i = 0; i < computed.size(); i++) {
+            current += computed.get(i);
+            if (current > selected) {
+                return i;
+            }
+        }
+        throw new IllegalStateException("Could not compute a weight");
+    }
+
     private String capitalize(final String line) {
         return Character.toUpperCase(line.charAt(0)) + line.substring(1);
     }
@@ -173,6 +213,61 @@ public class FlashCardController {
             }
         }
         return errors;
+    }
+
+    @AllArgsConstructor
+    public class Writer {
+
+        private String file;
+
+        public void write(int question, int difficulty) {
+            File actual = new File(file);
+            if (!actual.exists()) {
+                try {
+                    if (!actual.createNewFile()) {
+                        throw new IllegalStateException("Could not create " + file);
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+            try (FileWriter fileWriter = new FileWriter(actual, true)) {
+                fileWriter.write(question + "," + difficulty + "\n");
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        public void read(BiConsumer<Integer, Integer> questionDifficultyConsumer) throws IOException {
+            File actual = new File(file);
+            if (actual.exists()) {
+                try (BufferedReader reader = new BufferedReader(new FileReader(actual))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        boolean error = false;
+                        try {
+                            if (line.contains(",")) {
+                                String[] split = line.split(",");
+                                if (split.length != 2) {
+                                    error = true;
+                                }
+                                int question = Integer.parseInt(split[0]);
+                                int weight = Integer.parseInt(split[1]);
+                                questionDifficultyConsumer.accept(question, weight);
+                            } else if (!line.isEmpty()) {
+                                error = true;
+                            }
+                        } catch (NumberFormatException ex) {
+                            error = true;
+                        }
+                        if (error) {
+                            log.warn("Unknown line {} encountered while reading {}", line, file);
+                        }
+                    }
+                }
+            }
+        }
+
     }
 
     @Data
