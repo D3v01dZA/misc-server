@@ -1,7 +1,6 @@
 package net.caltona.miscserver;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -12,8 +11,8 @@ import org.yaml.snakeyaml.Yaml;
 import java.io.*;
 import java.util.*;
 import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Slf4j
 @RestController
@@ -64,15 +63,102 @@ public class FlashCardController {
     @GetMapping(value = "/card")
     public String card(@RequestParam(required = false) String list,
                        @RequestParam(required = false) Integer question,
-                       @RequestParam(required = false) Integer difficulty) {
+                       @RequestParam(required = false) Integer difficulty,
+                       @RequestParam(required = false) String stat) {
         if (list == null) {
             return listHTML();
         }
         List<Combo> combos = combosByName.get(list);
-        if (combos == null) {
+        Writer writer = outputsByName.get(list);
+        if (combos == null || writer == null) {
             return listHTML();
         }
-        return cardHTML(list, combos, weightsByName.get(list), outputsByName.get(list), question, difficulty);
+        if (stat != null) {
+            return statHTML(list, stat, combos, writer);
+        }
+        return cardHTML(list, combos, weightsByName.get(list), writer, question, difficulty);
+    }
+
+    private String statHTML(String list, String stat, List<Combo> combos, Writer writer) {
+        log.info("Stat");
+        List<String> errors = new ArrayList<>();
+        List<Stat> stats = new ArrayList<>();
+        for (int i = 0; i < combos.size(); i++) {
+            stats.add(new Stat(i + 1, 0, 0, 0, 0));
+        }
+        writer.read((question, difficulty) -> {
+            boolean error = false;
+            if (question < 0) {
+                errors.add("Question < 0");
+                error = true;
+            }
+            if (question >= combos.size()) {
+                errors.add("Question > " + combos.size());
+                error = true;
+            }
+            if (difficulty < 1) {
+                errors.add("Difficulty < 1");
+                error = true;
+            }
+            if (difficulty > 3) {
+                errors.add("Difficulty > 3");
+                error = true;
+            }
+            if (!error && difficulty == 1) {
+                stats.get(question).wrong();
+            }
+            if (!error && difficulty == 2) {
+                stats.get(question).hard();
+            }
+            if (!error && difficulty == 3) {
+                stats.get(question).easy();
+            }
+        });
+        if (stat.equals("questions")) {
+            // No sorting
+        } else if (stat.equals("total")) {
+            Collections.sort(stats, Comparator.<Stat>comparingInt(one -> one.total).reversed());
+        } else if (stat.equals("wrong")) {
+            Collections.sort(stats, Comparator.<Stat>comparingInt(one -> one.wrong).reversed());
+        } else if (stat.equals("hard")) {
+            Collections.sort(stats, Comparator.<Stat>comparingInt(one -> one.hard).reversed());
+        } else if (stat.equals("easy")) {
+            Collections.sort(stats, Comparator.<Stat>comparingInt(one -> one.easy).reversed());
+        } else {
+            errors.add("Unknown stat " + stat);
+        }
+        return String.format("<html>" +
+                        "   <head>" +
+                        "       <title>Flash Card - %s Stats</title>" +
+                        "   </head>" +
+                        "   <body>" +
+                        "       <div style='height: 100%%;display: flex;justify-content: center;align-items: center;flex-direction: column;'>" +
+                        "           <div style='display: flex;justify-content: center;align-items: center;flex-direction: row;'>" +
+                        "               <button style='font-size: 2em;' id='total' onclick='redirect(\"questions\")'>Question</button>" +
+                        "               <button style='font-size: 2em;' id='total' onclick='redirect(\"total\")'>Total</button>" +
+                        "               <button style='font-size: 2em;' id='wrong' onclick='redirect(\"wrong\")'>Wrong</button>" +
+                        "               <button style='font-size: 2em;' id='hard' onclick='redirect(\"hard\")'>Hard</button>" +
+                        "               <button style='font-size: 2em;' id='easy' onclick='redirect(\"easy\")'>Easy</button>" +
+                        "           </div>" +
+                        "           <h2 style='font-size: 6em;'>Stats</h2>" +
+                        "           %s" +
+                        "           %s" +
+                        "           <script>" +
+                        "               function redirect(stat) {" +
+                        "                   const params = new URLSearchParams(window.location.search);" +
+                        "                   params.set('stat', stat);" +
+                        "                   window.location.search = params;" +
+                        "               }" +
+                        "           </script>" +
+                        "       </div>" +
+                        "   </body>" +
+                        "</html>",
+                list,
+                "<p style='overflow:scroll;font-size: 2em;'>" + stats.stream()
+                        .map(single -> String.format("Question: %s Total %s: Wrong %s: Hard %s: Easy %s", single.question, single.total, single.wrong, single.hard, single.easy))
+                        .collect(Collectors.joining("<br/>")) + "</p>",
+                errors.isEmpty() ? "" : "<h2>Errors</h2>" + "<p>" + String.join("<br/>", errors) + "</p>"
+        );
     }
 
     private String listHTML() {
@@ -91,22 +177,53 @@ public class FlashCardController {
                         "                   params.set('list', url);" +
                         "                   window.location.search = params;" +
                         "               }" +
+                        "               function redirectstats(url) {" +
+                        "                   const params = new URLSearchParams(window.location.search);" +
+                        "                   params.set('list', url);" +
+                        "                   params.set('stat', 'questions');" +
+                        "                   window.location.search = params;" +
+                        "               }" +
                         "           </script>" +
                         "       </div>" +
                         "   </body>" +
                         "</html>",
                 combosByName.keySet().stream()
-                        .map(list -> String.format("<button style='font-size: 2em;' onclick='redirect(\"%s\")'>%s</button>", list, capitalize(list)))
+                        .flatMap(list -> Stream.of(
+                                String.format("<button style='font-size: 2em;' onclick='redirect(\"%s\")'>%s</button>", list, "Quiz - " + capitalize(list)),
+                                String.format("<button style='font-size: 2em;' onclick='redirectstats(\"%s\")'>%s</button>", list, "Stats - " + capitalize(list))
+                        ))
                         .collect(Collectors.joining())
         );
     }
 
-    private String cardHTML(String list, List<Combo> combos, List<Integer> weights, Writer output, Integer question, Integer difficulty) {
+    private String cardHTML(String list, List<Combo> combos, List<Integer> weights, Writer writer, Integer question, Integer difficulty) {
         log.info("List {} card {} difficulty {}", list, question, difficulty);
-        List<String> errors = getErrors(combos, question, difficulty);
+
+        List<String> errors = new ArrayList<>();
+        if (difficulty != null || question != null) {
+            if (question == null) {
+                errors.add("Question was null");
+            }
+            if (question != null && question < 0) {
+                errors.add("Question was < 0");
+            }
+            if (question != null && question > combos.size() - 1) {
+                errors.add("Question was > " + (combos.size() - 1));
+            }
+            if (difficulty == null) {
+                errors.add("Difficulty was null");
+            }
+            if (difficulty != null && difficulty < 1) {
+                errors.add("Difficulty was < 1");
+            }
+            if (difficulty != null && difficulty > 3) {
+                errors.add("Difficulty was > 3");
+            }
+        }
+
         if (question != null && difficulty != null && errors.isEmpty()) {
             addWeight(list, weights, question, difficulty);
-            output.write(question, difficulty);
+            writer.write(question, difficulty);
         }
         int selected = applyWeights(weights);
         Combo combo = combos.get(selected);
@@ -124,9 +241,9 @@ public class FlashCardController {
                         "                   <button style='font-size: 2em;' id='wrong' onclick='redirect(1)'>Wrong</button>" +
                         "                   <button style='font-size: 2em;' id='hard' onclick='redirect(2)'>Hard</button>" +
                         "                   <button style='font-size: 2em;' id='easy' onclick='redirect(3)'>Easy</button>" +
-                        "               </button>" +
+                        "               </div>" +
                         "           </div>" +
-                        "           <p style='font-size: 3em;'>%s</p>" +
+                        "           %s" +
                         "           <script>" +
                         "               function answer() {" +
                         "                   document.querySelector('#ansbtn').style.display = 'none';" +
@@ -192,31 +309,6 @@ public class FlashCardController {
         return Character.toUpperCase(line.charAt(0)) + line.substring(1);
     }
 
-    private static List<String> getErrors(List<Combo> combos, Integer question, Integer difficulty) {
-        List<String> errors = new ArrayList<>();
-        if (difficulty != null || question != null) {
-            if (question == null) {
-                errors.add("Question was null");
-            }
-            if (question != null && question < 0) {
-                errors.add("Question was < 0");
-            }
-            if (question != null && question > combos.size() - 1) {
-                errors.add("Question was > " + (combos.size() - 1));
-            }
-            if (difficulty == null) {
-                errors.add("Difficulty was null");
-            }
-            if (difficulty != null && difficulty < 1) {
-                errors.add("Difficulty was < 1");
-            }
-            if (difficulty != null && difficulty > 3) {
-                errors.add("Difficulty was > 3");
-            }
-        }
-        return errors;
-    }
-
     @AllArgsConstructor
     public class Writer {
 
@@ -240,7 +332,7 @@ public class FlashCardController {
             }
         }
 
-        public void read(BiConsumer<Integer, Integer> questionDifficultyConsumer) throws IOException {
+        public void read(BiConsumer<Integer, Integer> questionDifficultyConsumer) {
             File actual = new File(file);
             if (actual.exists()) {
                 try (BufferedReader reader = new BufferedReader(new FileReader(actual))) {
@@ -266,6 +358,8 @@ public class FlashCardController {
                             log.warn("Unknown line {} encountered while reading {}", line, file);
                         }
                     }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
                 }
             }
         }
@@ -309,6 +403,33 @@ public class FlashCardController {
                     throw new IllegalStateException("Null answer");
                 }
             }
+        }
+
+    }
+
+    @Getter
+    @AllArgsConstructor
+    public static class Stat {
+
+        private int question;
+        private int total;
+        private int wrong;
+        private int hard;
+        private int easy;
+
+        public void wrong() {
+            total++;
+            wrong++;
+        }
+
+        public void hard() {
+            total++;
+            hard++;
+        }
+
+        public void easy() {
+            total++;
+            easy++;
         }
 
     }
