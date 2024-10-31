@@ -82,8 +82,8 @@ public class FlashCardController {
                         "       <title>Flash Card List</title>" +
                         "   </head>" +
                         "   <body>" +
-                        "       <div style='max-width:95%%;margin:auto;text-align:center'>" +
-                        "           <h2>Lists</h2>" +
+                        "       <div style='height: 100%%;display: flex;justify-content: center;align-items: center;flex-direction: column;'>" +
+                        "           <h2 style='font-size: 6em;'>Lists</h2>" +
                         "           %s" +
                         "           <script>" +
                         "               function redirect(url) {" +
@@ -96,7 +96,7 @@ public class FlashCardController {
                         "   </body>" +
                         "</html>",
                 combosByName.keySet().stream()
-                        .map(list -> String.format("<button onclick='redirect(\"%s\")'>%s</button>", list, capitalize(list)))
+                        .map(list -> String.format("<button style='font-size: 2em;' onclick='redirect(\"%s\")'>%s</button>", list, capitalize(list)))
                         .collect(Collectors.joining())
         );
     }
@@ -115,16 +115,18 @@ public class FlashCardController {
                         "       <title>Flash Card Test - %s</title>" +
                         "   </head>" +
                         "   <body>" +
-                        "       <div style='max-width:%%;margin:auto;text-align:center'>" +
-                        "           <h2>%s</h2>" +
-                        "           <button id='ansbtn' onclick='answer()'>Answer</button>" +
+                        "       <div style='height: 100%%;display: flex;justify-content: center;align-items: center;flex-direction: column;text-align: center;'>" +
+                        "           <h2 style='font-size: 6em;'>%s</h2>" +
+                        "           <button style='font-size: 2em;' id='ansbtn' onclick='answer()'>Answer</button>" +
                         "           <div id='ans' style='display:none'>" +
-                        "               <h3>%s</h3>" +
-                        "               <button id='wrong' onclick='redirect(1)'>Wrong</button>" +
-                        "               <button id='hard' onclick='redirect(2)'>Hard</button>" +
-                        "               <button id='easy' onclick='redirect(3)'>Easy</button>" +
+                        "               <h3 style='font-size: 3em;text-align: center;'>%s</h3>" +
+                        "               <div style='display: flex;justify-content: center;align-items: center;flex-direction: row;'>" +
+                        "                   <button style='font-size: 2em;' id='wrong' onclick='redirect(1)'>Wrong</button>" +
+                        "                   <button style='font-size: 2em;' id='hard' onclick='redirect(2)'>Hard</button>" +
+                        "                   <button style='font-size: 2em;' id='easy' onclick='redirect(3)'>Easy</button>" +
+                        "               </button>" +
                         "           </div>" +
-                        "           <p>%s</p>" +
+                        "           <p style='font-size: 3em;'>%s</p>" +
                         "           <script>" +
                         "               function answer() {" +
                         "                   document.querySelector('#ansbtn').style.display = 'none';" +
