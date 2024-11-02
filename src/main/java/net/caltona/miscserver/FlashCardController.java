@@ -291,10 +291,10 @@ public class FlashCardController {
         List<Integer> computed = weights.stream()
                 .map(weight -> Math.abs(modifier - weight) + 1)
                 .toList();
-        int sum = computed.stream()
+        long sum = computed.stream()
                 .mapToInt(__ -> __)
                 .sum();
-        int selected = RANDOM.nextInt(sum);
+        long selected = RANDOM.nextLong(sum);
         int current = 0;
         for (int i = 0; i < computed.size(); i++) {
             current += computed.get(i);
