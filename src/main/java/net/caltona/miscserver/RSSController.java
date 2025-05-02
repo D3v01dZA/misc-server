@@ -8,6 +8,7 @@ import org.dom4j.Element;
 import org.dom4j.io.SAXReader;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -50,6 +51,11 @@ public class RSSController {
                     ShortsFilter shortsFilter = new ShortsFilter();
                     log.info("RSS URL [{}] added filter [{}]", url, shortsFilter);
                     filters.add(shortsFilter);
+                }
+                if (value.equalsIgnoreCase("country")) {
+                    CountryFilter countryFilter = new CountryFilter();
+                    log.info("RSS URL [{}] added filter [{}]", url, countryFilter);
+                    filters.add(countryFilter);
                 }
             }
         }
@@ -179,6 +185,48 @@ public class RSSController {
             return "IncludeTextFilter{" +
                     "text='" + text + '\'' +
                     '}';
+        }
+    }
+
+    @AllArgsConstructor
+    public class CountryFilter implements Filter {
+
+        @Override
+        public boolean shouldFilter(String url, String description, Element element) {
+            Element id = element.element("id");
+            if (id != null) {
+                String videoId = id.getText();
+                if (videoId != null) {
+                    String[] split = videoId.split(":");
+                    if (split.length == 3) {
+                        String actualId = split[2];
+                        log.debug("RSS URL [{}] [{}] found actual video id [{}]", url, description, actualId);
+                        if (isAvailable(actualId)) {
+                            log.debug("RSS URL [{}] [{}] found short [{}]", url, description, actualId);
+                            return true;
+                        } else {
+                            log.debug("RSS URL [{}] [{}] found video [{}]", url, description, actualId);
+                        }
+                    } else {
+                        log.warn("RSS URL [{}] [{}] entry has a malformed id in [{}]", url, description, id.asXML());
+                    }
+                } else {
+                    log.warn("RSS URL [{}] [{}] entry has no video id in [{}]", url, description, id.asXML());
+                }
+            } else {
+                log.debug("RSS URL [{}] [{}] entry has no id in [{}]", url, description, element.asXML());
+            }
+            return false;
+        }
+
+        private boolean isAvailable(String id) {
+            String text = restTemplate.getForObject("https://www.youtube.com/watch?v=" + id, String.class);
+            return text != null && !text.contains("The uploader has not made this video available in your country");
+        }
+
+        @Override
+        public String toString() {
+            return "CountryFilter{}";
         }
     }
 
