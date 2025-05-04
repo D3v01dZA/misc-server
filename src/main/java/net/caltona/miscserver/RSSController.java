@@ -1,6 +1,8 @@
 package net.caltona.miscserver;
 
 import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.dom4j.Document;
 import org.dom4j.DocumentException;
@@ -8,7 +10,6 @@ import org.dom4j.Element;
 import org.dom4j.io.SAXReader;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -17,6 +18,7 @@ import org.springframework.web.client.RestTemplate;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.*;
+import java.util.concurrent.*;
 
 @Slf4j
 @RestController
@@ -25,6 +27,9 @@ public class RSSController {
 
     @Autowired
     private RestTemplate restTemplate;
+
+    @Autowired
+    private ExecutorService executor;
 
     @GetMapping(value = "/rss", produces = "text/xml; charset=UTF-8")
     public String rss(
@@ -86,29 +91,56 @@ public class RSSController {
         Set<Element> elementsToDelete = new HashSet<>();
         Set<String> remaining = new LinkedHashSet<>();
         Set<String> removed = new LinkedHashSet<>();
+        List<Future<FilterResult>> elementFutures = new ArrayList<>();
         for (Element element : rootElement.elements()) {
             if (element.getName().equals("entry")) {
-                Element title = element.element("title");
-                String description = title != null ? title.getText() : "No Title";
-                boolean filtered = false;
-                for (Filter filter : filters) {
-                    if (filter.shouldFilter(url, description, element)) {
-                        log.info("RSS URL [{}] [{}] filtered because of [{}]", url, description, filter);
-                        filtered = true;
-                    } else {
-                        log.info("RSS URL [{}] [{}] not filtered because of [{}]", url, description, filter);
+                elementFutures.add(executor.submit(() -> {
+                    Element title = element.element("title");
+                    String description = title != null ? title.getText() : "No Title";
+                    boolean filtered = false;
+                    for (Filter filter : filters) {
+                        if (filter.shouldFilter(url, description, element)) {
+                            log.info("RSS URL [{}] [{}] filtered because of [{}]", url, description, filter);
+                            filtered = true;
+                        } else {
+                            log.info("RSS URL [{}] [{}] not filtered because of [{}]", url, description, filter);
+                        }
                     }
-                }
-                if (filtered) {
-                    elementsToDelete.add(element);
-                    removed.add(description);
+                    if (filtered) {
+                        return new FilterResult(element, description);
+                    } else {
+                        return new FilterResult(null, description);
+                    }
+                }));
+            }
+        }
+        for (Future<FilterResult> filterResultFuture : elementFutures) {
+            try {
+                FilterResult filterResult = filterResultFuture.get(20, TimeUnit.SECONDS);
+                Element element = filterResult.getElement();
+                if (element == null) {
+                    remaining.add(filterResult.getDescription());
                 } else {
-                    remaining.add(description);
+                    elementsToDelete.add(element);
+                    removed.add(filterResult.getDescription());
                 }
+            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                throw new RuntimeException(e);
             }
         }
         log.info("RSS URL [{}] removed [{}] elements left [{}] remaining with titles removed [{}] and remaining [{}]", url, removed.size(), remaining.size(), removed, remaining);
         return elementsToDelete;
+    }
+
+    @Getter
+    @AllArgsConstructor
+    private class FilterResult {
+
+        private Element element;
+
+        @NonNull
+        private String description;
+
     }
 
     public class ShortsFilter implements Filter {
@@ -201,8 +233,8 @@ public class RSSController {
                     if (split.length == 3) {
                         String actualId = split[2];
                         log.debug("RSS URL [{}] [{}] found actual video id [{}]", url, description, actualId);
-                        if (isAvailable(actualId)) {
-                            log.debug("RSS URL [{}] [{}] found short [{}]", url, description, actualId);
+                        if (notAvailableInCountry(actualId)) {
+                            log.debug("RSS URL [{}] [{}] found out of country [{}]", url, description, actualId);
                             return true;
                         } else {
                             log.debug("RSS URL [{}] [{}] found video [{}]", url, description, actualId);
@@ -219,9 +251,9 @@ public class RSSController {
             return false;
         }
 
-        private boolean isAvailable(String id) {
+        private boolean notAvailableInCountry(String id) {
             String text = restTemplate.getForObject("https://www.youtube.com/watch?v=" + id, String.class);
-            return text != null && !text.contains("The uploader has not made this video available in your country");
+            return text != null && text.contains("The uploader has not made this video available in your country");
         }
 
         @Override

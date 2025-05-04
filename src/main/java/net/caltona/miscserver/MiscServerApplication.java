@@ -11,6 +11,8 @@ import org.springframework.web.filter.CommonsRequestLoggingFilter;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @AllArgsConstructor
 @SpringBootApplication
@@ -33,6 +35,12 @@ public class MiscServerApplication {
 				.requestFactory(RequestFactory::new)
 				.build();
 	}
+
+	@Bean
+	public ExecutorService taskExecutor() {
+		return Executors.newFixedThreadPool(16);
+	}
+
 
 	public class RequestFactory extends SimpleClientHttpRequestFactory {
 
