@@ -1,7 +1,7 @@
 import express from "express";
 import type { Request, Response } from "express";
 import winston from "winston";
-import { RSSHandler } from "./rss.ts";
+import { RSSHandler } from "./rss";
 
 const app = express();
 const port = 3000;

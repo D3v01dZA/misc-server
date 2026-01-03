@@ -256,26 +256,25 @@ export class RSSHandler {
         if (parsed.format === "atom") {
           const original = parsed.feed as Atom.Feed<string>;
           feed = {
-            authors: original.authors,
-            categories: original.categories,
-            contributors: original.contributors,
-            generator: original.generator,
-            icon: original.icon,
+            ...(original.authors && { authors: original.authors }),
+            ...(original.categories && { categories: original.categories }),
+            ...(original.contributors && { contributors: original.contributors }),
+            ...(original.generator && { generator: original.generator }),
+            ...(original.icon && { icon: original.icon }),
             id: original.id,
-            links: undefined, // Needs date parsing
-            logo: original.logo,
-            rights: original.rights,
-            subtitle: original.subtitle,
+            ...(original.logo && { logo: original.logo }),
+            ...(original.rights && { rights: original.rights }),
+            ...(original.subtitle && { subtitle: original.subtitle }),
             title: original.title,
             updated: new Date(original.updated),
-            entries: await this.filterEntries(original.entries, filter),
-            dc: undefined, // Needs date parsing
-            sy: undefined, // Needs date parsing
-            itunes: original.itunes,
-            media: original.media,
-            georss: original.georss,
-            dcterms: undefined, // Needs date parsing
-            yt: original.yt,
+            ...(await (async () => {
+              const entries = await this.filterEntries(original.entries, filter);
+              return entries ? { entries } : {};
+            })()),
+            ...(original.itunes && { itunes: original.itunes }),
+            ...(original.media && { media: original.media }),
+            ...(original.georss && { georss: original.georss }),
+            ...(original.yt && { yt: original.yt }),
           };
         } else {
           return Promise.resolve("UNSUPPORTED");
@@ -317,28 +316,23 @@ export class RSSHandler {
 
   atomEntry(entry: Atom.Entry<string>): Atom.Entry<Date> {
     return {
-      authors: entry.authors,
-      categories: entry.categories,
-      content: entry.content,
-      contributors: entry.contributors,
+      ...(entry.authors && { authors: entry.authors }),
+      ...(entry.categories && { categories: entry.categories }),
+      ...(entry.content && { content: entry.content }),
+      ...(entry.contributors && { contributors: entry.contributors }),
       id: entry.id,
-      links: undefined, // Needs Date Parsing
-      published: undefined, // Needs Date Parsing
-      rights: entry.rights,
-      source: undefined, // Needs Date Parsing
-      summary: entry.summary,
+      ...(entry.rights && { rights: entry.rights }),
+      ...(entry.summary && { summary: entry.summary }),
       title: entry.title,
       updated: new Date(entry.updated),
-      dc: undefined, // Needs Date Parsing
-      slash: entry.slash,
-      itunes: entry.itunes,
-      psc: entry.psc,
-      media: entry.media,
-      georss: entry.georss,
-      thr: entry.thr,
-      dcterms: undefined, // Needs Date Parsing
-      wfw: entry.wfw,
-      yt: entry.yt,
+      ...(entry.slash && { slash: entry.slash }),
+      ...(entry.itunes && { itunes: entry.itunes }),
+      ...(entry.psc && { psc: entry.psc }),
+      ...(entry.media && { media: entry.media }),
+      ...(entry.georss && { georss: entry.georss }),
+      ...(entry.thr && { thr: entry.thr }),
+      ...(entry.wfw && { wfw: entry.wfw }),
+      ...(entry.yt && { yt: entry.yt }),
     };
   }
 }

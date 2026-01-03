@@ -3,6 +3,7 @@
   "compilerOptions": {
     "module": "CommonJS",
     "target": "esnext",
+    "outDir": "build",
     "esModuleInterop": true,
     "types": [],
     "declaration": true,
