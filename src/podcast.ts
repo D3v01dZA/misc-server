@@ -234,6 +234,7 @@ export class PodcastHandler {
     // RSS items must have either title or description
     const item: Rss.Item<Date> = {
       ...(entry.title && { title: entry.title }),
+      ...(link && { link }), // Include link for database storage (will be removed from feed output)
       description: entry.summary || entry.content || entry.title || "",
       ...(entry.id && { guid: { value: entry.id, isPermaLink: false } }),
       ...(pubDate && { pubDate }),
