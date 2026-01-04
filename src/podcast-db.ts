@@ -74,19 +74,19 @@ export class PodcastDatabase {
       .get() as { version: number } | undefined;
     const currentVersion = versionResult?.version || 0;
 
-    this.logger.info(`Current database schema version: ${currentVersion}`);
+
 
     // Run migrations
     this.runMigrations(currentVersion);
 
-    this.logger.info("Database initialized");
+
   }
 
   private runMigrations(currentVersion: number) {
     const migrations = [
       // Migration 1: Initial schema
       () => {
-        this.logger.info("Running migration 1: Initial schema");
+
         this.db.exec(`
           CREATE TABLE IF NOT EXISTS feeds (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -136,13 +136,10 @@ export class PodcastDatabase {
     // Run migrations that haven't been applied yet
     for (let i = currentVersion; i < migrations.length; i++) {
       const migrationVersion = i + 1;
-      this.logger.info(`Applying migration ${migrationVersion}...`);
-      
       const migration = migrations[i];
       if (migration) {
         migration();
         this.db.prepare("INSERT INTO schema_version (version) VALUES (?)").run(migrationVersion);
-        this.logger.info(`Migration ${migrationVersion} applied successfully`);
       }
     }
   }
@@ -183,7 +180,7 @@ export class PodcastDatabase {
           feedData.itunes ? JSON.stringify(feedData.itunes) : null,
           existing.id
         );
-      this.logger.debug(`Updated feed metadata for ${url}`);
+
       return this.db
         .prepare("SELECT * FROM feeds WHERE id = ?")
         .get(existing.id) as StoredFeed;
@@ -209,7 +206,7 @@ export class PodcastDatabase {
           feedData.image?.link || null,
           feedData.itunes ? JSON.stringify(feedData.itunes) : null
         );
-      this.logger.info(`Created new feed for ${url}`);
+
       return this.db
         .prepare("SELECT * FROM feeds WHERE id = ?")
         .get(result.lastInsertRowid) as StoredFeed;
@@ -338,16 +335,6 @@ export class PodcastDatabase {
   }
 
   getItemsNeedingDownload(feedId: number, limit: number = 10): StoredItem[] {
-    // First, let's see all items for this feed
-    const allItems = this.db
-      .prepare(`SELECT id, guid, link, audioPath FROM items WHERE feedId = ?`)
-      .all(feedId) as Array<{ id: number; guid: string; link: string | null; audioPath: string | null }>;
-    
-    this.logger.info(`Total items in feed ${feedId}: ${allItems.length}`);
-    allItems.forEach((item) => {
-      this.logger.info(`  Item ${item.id}: guid=${item.guid}, link=${item.link ? 'YES' : 'NULL'}, audioPath=${item.audioPath ? 'YES' : 'NULL'}`);
-    });
-    
     const items = this.db
       .prepare(
         `SELECT * FROM items 
@@ -356,11 +343,6 @@ export class PodcastDatabase {
          LIMIT ?`
       )
       .all(feedId, limit) as StoredItem[];
-    
-    this.logger.info(`getItemsNeedingDownload(feedId=${feedId}, limit=${limit}) returned ${items.length} items`);
-    if (items.length > 0 && items[0]) {
-      this.logger.info(`First item to download: ${items[0].guid} - ${items[0].link}`);
-    }
     
     return items;
   }

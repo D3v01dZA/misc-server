@@ -74,30 +74,16 @@ export class MediaDownloader {
     }
 
     try {
-      this.logger.info(`Downloading media for video ${videoId} from ${url}`);
-
       // Download audio as mp3
       const audioOutput = path.join(outputDir, "audio.%(ext)s");
       const audioCommand = `yt-dlp -x --audio-format mp3 --audio-quality 0 -o "${audioOutput}" "${url}"`;
       
-      this.logger.info(`Starting audio download: ${audioCommand}`);
-      const audioStart = Date.now();
       const audioResult = await execAsync(audioCommand, { timeout: 300000 }); // 5 minute timeout
-      this.logger.info(`Audio download completed in ${Date.now() - audioStart}ms`);
-      if (audioResult.stderr) {
-        this.logger.warn(`yt-dlp stderr: ${audioResult.stderr}`);
-      }
       
       // Download all thumbnail sizes to get highest quality
       const thumbnailCommand = `yt-dlp --write-all-thumbnails --skip-download --convert-thumbnails jpg -o "${path.join(outputDir, "thumbnail")}" "${url}"`;
       
-      this.logger.info(`Starting thumbnail download: ${thumbnailCommand}`);
-      const thumbStart = Date.now();
-      const thumbResult = await execAsync(thumbnailCommand, { timeout: 60000 }); // 1 minute timeout
-      this.logger.info(`Thumbnail download completed in ${Date.now() - thumbStart}ms`);
-      if (thumbResult.stderr) {
-        this.logger.warn(`yt-dlp thumbnail stderr: ${thumbResult.stderr}`);
-      }
+      await execAsync(thumbnailCommand, { timeout: 60000 }); // 1 minute timeout
 
       // Verify files exist
       if (!fs.existsSync(audioPath)) {
@@ -120,7 +106,6 @@ export class MediaDownloader {
           if (preferredPath !== thumbnailPath) {
             // Copy best quality to standard location
             fs.copyFileSync(preferredPath, thumbnailPath);
-            this.logger.info(`Using thumbnail: ${path.basename(preferredPath)}`);
           }
           finalThumbnailPath = thumbnailPath;
           foundThumbnail = true;
@@ -136,14 +121,7 @@ export class MediaDownloader {
         }
       }
 
-      if (!foundThumbnail) {
-        this.logger.warn(`Thumbnail not found for ${videoId}, continuing without it`);
-      }
-
       const stats = fs.statSync(audioPath);
-      this.logger.info(
-        `Successfully downloaded media for ${videoId} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`
-      );
 
       return {
         audioPath,

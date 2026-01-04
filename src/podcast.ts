@@ -71,25 +71,21 @@ export class PodcastHandler {
         // Apply custom title and description if provided
         if (customTitle) {
           rssFeed.title = customTitle;
-          this.logger.info(`Overriding feed title to: ${customTitle}`);
         }
         if (customDescription) {
           rssFeed.description = customDescription;
-          this.logger.info(`Overriding feed description to: ${customDescription}`);
         }
         
         // Extract channel ID from URL
         const channelIdMatch = url.match(/channel_id=([^&]+)/);
         const channelId = channelIdMatch ? channelIdMatch[1] : null;
-        this.logger.info(`Extracted channel ID: ${channelId || 'NULL'}`);
         
         // Store in database and get merged results
         const storedFeed = this.db.getOrCreateFeed(url, rssFeed);
         const newItemCount = rssFeed.items?.length ?? 0;
         
         if (rssFeed.items && rssFeed.items.length > 0) {
-          const upsertedCount = this.db.upsertItems(storedFeed.id, rssFeed.items);
-          this.logger.debug(`Upserted ${upsertedCount} items for feed ${url}`);
+          this.db.upsertItems(storedFeed.id, rssFeed.items);
         }
         
         // Download media synchronously before returning feed
@@ -120,19 +116,13 @@ export class PodcastHandler {
             // Update episode thumbnail URL (iTunes image)
             if (item.itunes && item.itunes.image) {
               const thumbnailPath = item.itunes.image as string;
-              this.logger.info(`Episode thumbnail: ${thumbnailPath}, exists: ${fs.existsSync(thumbnailPath)}`);
               if (fs.existsSync(thumbnailPath)) {
                 const thumbnailUrl = this.downloader.getMediaUrl(
                   thumbnailPath,
                   this.baseUrl
                 );
                 item.itunes.image = thumbnailUrl;
-                this.logger.info(`Set episode thumbnail URL: ${thumbnailUrl}`);
-              } else {
-                this.logger.warn(`Episode thumbnail file not found: ${thumbnailPath}`);
               }
-            } else {
-              this.logger.warn(`Episode missing iTunes image data`);
             }
           }
         }
@@ -146,12 +136,7 @@ export class PodcastHandler {
           const channelThumbnail = await this.getChannelThumbnail(storedFeed.id, channelId);
           if (channelThumbnail) {
             mergedFeed.itunes.image = this.downloader.getMediaUrl(channelThumbnail, this.baseUrl);
-            this.logger.info(`Set channel thumbnail: ${mergedFeed.itunes.image}`);
-          } else {
-            this.logger.warn(`Failed to fetch channel thumbnail for ${channelId}`);
           }
-        } else {
-          this.logger.warn(`No channel ID found in URL`);
         }
         
         // Generate and send the feed
@@ -205,11 +190,8 @@ export class PodcastHandler {
       const match = entry.id.match(/yt:video:([^:]+)/);
       if (match && match[1]) {
         link = `https://www.youtube.com/watch?v=${match[1]}`;
-        this.logger.info(`Constructed YouTube URL from GUID ${entry.id}: ${link}`);
       }
     }
-    
-    this.logger.info(`Converting entry ${entry.id}: has ${entry.links?.length || 0} links, link=${link || 'NULL'}`);
     const author = entry.authors?.[0]
       ? (entry.authors[0].email || entry.authors[0].name)
       : undefined;
@@ -251,23 +233,19 @@ export class PodcastHandler {
     // Get items that need downloading
     const itemsToDownload = this.db.getItemsNeedingDownload(feedId, 5);
     
-    this.logger.info(`Found ${itemsToDownload.length} items needing download for feed ${feedId}`);
-    
     if (itemsToDownload.length === 0) {
       return;
     }
 
-    this.logger.info(`Starting download of ${itemsToDownload.length} items...`);
+    this.logger.info(`Downloading ${itemsToDownload.length} items...`);
 
     // Download synchronously (block until complete)
     for (const item of itemsToDownload) {
       if (!item.link) {
-        this.logger.warn(`Skipping item ${item.guid} - no link`);
         continue;
       }
 
       try {
-        this.logger.info(`Downloading media for item ${item.guid} from ${item.link}`);
         const result = await this.downloader.download(feedId, item.link);
         
         if (result) {
@@ -277,9 +255,6 @@ export class PodcastHandler {
             result.audioPath,
             result.thumbnailPath
           );
-          this.logger.info(`Successfully downloaded and saved media for ${item.guid}`);
-        } else {
-          this.logger.warn(`Download returned null for ${item.guid}`);
         }
       } catch (error) {
         this.logger.error(`Failed to download media for ${item.guid}: ${error}`);
@@ -293,7 +268,6 @@ export class PodcastHandler {
 
     // Check if already downloaded
     if (fs.existsSync(thumbnailPath)) {
-      this.logger.debug(`Channel avatar already exists: ${thumbnailPath}`);
       return thumbnailPath;
     }
 
@@ -304,7 +278,6 @@ export class PodcastHandler {
 
     try {
       const channelUrl = `https://www.youtube.com/channel/${channelId}`;
-      this.logger.info(`Fetching channel avatar from ${channelUrl}`);
       
       // Use yt-dlp to get channel thumbnail
       const { exec } = await import('child_process');
@@ -313,7 +286,6 @@ export class PodcastHandler {
       
       // Download all thumbnail sizes to get highest quality
       const command = `yt-dlp --write-all-thumbnails --skip-download --convert-thumbnails jpg --playlist-items 0 -o "${path.join(channelDir, 'avatar')}" "${channelUrl}"`;
-      this.logger.debug(`Executing: ${command}`);
       
       await execAsync(command, { timeout: 60000 });
       
@@ -328,7 +300,6 @@ export class PodcastHandler {
         if (fs.existsSync(preferredPath)) {
           if (preferredPath !== thumbnailPath) {
             fs.copyFileSync(preferredPath, thumbnailPath);
-            this.logger.info(`Using channel thumbnail: ${path.basename(preferredPath)}`);
           }
           foundThumbnail = true;
           break;
@@ -344,10 +315,8 @@ export class PodcastHandler {
       }
       
       if (foundThumbnail) {
-        this.logger.info(`Successfully downloaded channel avatar to ${thumbnailPath}`);
         return thumbnailPath;
       } else {
-        this.logger.warn(`Channel avatar file not found after download`);
         return null;
       }
     } catch (error) {
