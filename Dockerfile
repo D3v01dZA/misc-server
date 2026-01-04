@@ -2,6 +2,12 @@ FROM node:22-alpine3.21
 
 WORKDIR /app
 
+# Install build dependencies for better-sqlite3 and runtime dependencies for yt-dlp
+RUN apk add --no-cache python3 make g++ ffmpeg py3-pip
+
+# Install yt-dlp
+RUN pip3 install --no-cache-dir yt-dlp --break-system-packages
+
 # Copy package files first for better layer caching
 COPY package*.json ./
 COPY tsconfig.json ./

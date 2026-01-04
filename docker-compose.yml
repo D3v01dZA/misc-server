@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  misc-server:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - podcast-storage:/storage/podcasts
+    environment:
+      - NODE_ENV=production
+      - BASE_URL=http://localhost:3000
+    restart: unless-stopped
+
+volumes:
+  podcast-storage:
